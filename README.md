@@ -1,6 +1,6 @@
 # IOT Fleet — Pipeline d'ingestion temps réel
 
-Pipeline DataOps de gestion d'une flotte de capteurs IoT. Les mesures de température sont reçues via un webhook, validées, puis stockées **en parallèle** dans PostgreSQL (relationnel) et MongoDB (documentaire). Le pipeline est résilient (gestion d'erreurs et file de rejet) et envoie une **alerte e-mail** en cas de panne.
+Pipeline DataOps de gestion d'une flotte de capteurs IoT. Les mesures de température sont reçues via un webhook, validées, puis stockées **en parallèle** dans PostgreSQL (relationnel) et MongoDB (documentaire). Le pipeline est résilient (gestion d'erreurs) et envoie une **alerte e-mail** en cas d'erreur de traitement.
 
 ---
 
@@ -28,9 +28,7 @@ generate_data.py
                                    [Alerte e-mail SMTP → Mailpit]
 ```
 
-Deux niveaux de résilience :
-- **Niveau nœud** : capture des erreurs de *données* (ex. type invalide) via `Continue on Fail` + branche d'alerte.
-- **Niveau global** : un *Error Workflow* capture les pannes d'*infrastructure* (base injoignable) qui échappent au niveau nœud.
+Résilience au niveau des nœuds : les écritures critiques (Postgres, MongoDB) sont configurées en `Continue on Fail`. Les erreurs de *données* (ex. type invalide) sont isolées vers une branche d'alerte e-mail, sans interrompre le traitement des mesures valides.
 
 ---
 
@@ -38,6 +36,8 @@ Deux niveaux de résilience :
 
 - **Docker Desktop** (inclut Docker Compose)
 - **Python 3.x** (uniquement pour exécuter le générateur de données)
+- **DBeaver Community** — exploration de la base PostgreSQL
+- **MongoDB Compass** — exploration et initialisation de la base MongoDB
 
 ---
 
@@ -73,6 +73,33 @@ Cette commande démarre les quatre services. Les tables PostgreSQL (`capteurs`, 
 
 ---
 
+## Création de la base MongoDB (Compass)
+
+Contrairement à PostgreSQL — dont les tables sont créées automatiquement par `sql/init.sql` — la base MongoDB s'initialise manuellement dans **MongoDB Compass** :
+
+1. Ouvrir **MongoDB Compass**.
+2. Se connecter avec la chaîne : `mongodb://localhost:27017`
+   > L'hôte est ici `localhost` car Compass s'exécute sur la machine hôte (le port `27017` est exposé par Docker). À ne pas confondre avec le credential MongoDB **dans n8n**, qui utilise `mongodb://mongodb:27017` (le nom de service Docker, car n8n tourne dans un conteneur).
+3. Cliquer sur **Create Database** :
+   - **Database Name** : `iot_fleet`
+   - **Collection Name** : `Evenements`
+4. Valider avec **Create Database**.
+
+Les documents écrits par le pipeline ont la forme suivante (le champ `_id`, généré automatiquement par MongoDB, sert d'identifiant unique d'événement) :
+
+```json
+{
+  "id_capteur": 3,
+  "valeur_mesure": 22.5,
+  "timestamp": "2026-06-17T10:00:00Z",
+  "is_valid": true
+}
+```
+
+> La collection `Evenements` est par ailleurs recréée automatiquement par le nœud MongoDB de n8n au premier insert. Cette étape sert donc à initialiser explicitement la base et à pouvoir l'explorer dans Compass.
+
+---
+
 ## Configuration n8n (première installation ou après un reset)
 
 Les workflows sont versionnés en JSON, mais les **credentials n8n** (chiffrés dans le volume `n8n_data`) ne le sont pas. Après un déploiement vierge, il faut donc :
@@ -83,10 +110,9 @@ Les workflows sont versionnés en JSON, mais les **credentials n8n** (chiffrés 
    - **MongoDB** — Connection String : `mongodb://mongodb:27017` · Database : `iot_fleet`.
    - **SMTP** — Host : `mailpit` · Port : `1025` · User / Password : `iot` / `iot` · SSL : désactivé.
    > Les hôtes sont les **noms de service Docker** (`postgres`, `mongodb`, `mailpit`), jamais `localhost`.
-3. **Importer les workflows** : menu → *Import from File* → `workflows/sensor-data.json`, puis `workflows/error-handler.json`.
+3. **Importer le workflow** : menu → *Import from File* → `workflows/sensor-data.json`.
 4. Dans chaque nœud utilisant un credential (Postgres, MongoDB, Send Email), **re-sélectionner** le credential correspondant (les identifiants internes changent sur une instance neuve).
-5. Dans le workflow `sensor-data` : menu **⋯** → *Settings* → **Error workflow** → sélectionner `Error Handler`.
-6. **Publier** le workflow `sensor-data`.
+5. **Publier** le workflow `sensor-data`.
 
 ---
 
@@ -131,19 +157,13 @@ reset.bat         # Windows
 
 ## Tester la résilience et les alertes
 
-**Scénario 1 — donnée invalide (erreur applicative) :** capturée au niveau du nœud Postgres.
+Pour prouver que le pipeline gère une erreur sans se bloquer et envoie bien l'alerte SMTP, injecter une **donnée invalide** (`id_capteur` non entier, rejeté par PostgreSQL) :
+
 ```powershell
 Invoke-RestMethod -Uri "http://localhost:5678/webhook/sensor-data" -Method Post -ContentType "application/json" -Body '{"id_capteur":"INVALID","valeur_mesure":999999,"timestamp":"2026-06-17T10:00:00Z"}'
 ```
 
-**Scénario 2 — panne d'infrastructure (base coupée) :** capturée par l'Error Workflow global.
-```powershell
-docker compose stop mongodb
-Invoke-RestMethod -Uri "http://localhost:5678/webhook/sensor-data" -Method Post -ContentType "application/json" -Body '{"id_capteur":3,"valeur_mesure":22.5,"timestamp":"2026-06-17T10:00:00Z"}'
-docker compose start mongodb
-```
-
-Dans les deux cas, l'alerte doit apparaître dans Mailpit (http://localhost:8025), et le flux principal ne doit pas rester bloqué.
+L'erreur est capturée par la branche `Continue on Fail` du nœud Postgres : une alerte apparaît dans Mailpit (http://localhost:8025) et le flux principal continue de traiter les mesures valides.
 
 > Arrêter le générateur de données avant ces tests pour ne pas inonder la boîte d'alertes.
 
@@ -164,8 +184,7 @@ iot-fleet/
 ├── sql/
 │   └── init.sql          # schéma + données de démo (auto-exécuté)
 └── workflows/
-    ├── sensor-data.json  # pipeline principal
-    └── error-handler.json# workflow d'alerte global
+    └── sensor-data.json  # pipeline principal
 ```
 
 ---
