@@ -1,0 +1,302 @@
+{
+  "name": "sensor-data",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "sensor-data",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        -112,
+        -64
+      ],
+      "id": "e879455c-1830-45c8-a630-0565f32309c6",
+      "name": "Webhook",
+      "webhookId": "d893dfda-e035-4f5f-85ea-0d88ea0adbca"
+    },
+    {
+      "parameters": {
+        "jsCode": "const results = [];\n\nfor (const item of $input.all()) {\n  const body = item.json.body ?? item.json;\n\n  const temperature = Number(body.valeur_mesure);\n  const isValid = temperature >= -10 && temperature <= 50;\n\n  results.push({\n    json: {\n      id_capteur: body.id_capteur,\n      valeur_mesure: temperature,\n      timestamp: body.timestamp,\n      is_valid: isValid,\n    },\n  });\n}\n\nreturn results;"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        96,
+        -64
+      ],
+      "id": "b96b561c-c0a3-463a-aee8-440ee3123082",
+      "name": "Code in JavaScript"
+    },
+    {
+      "parameters": {
+        "schema": {
+          "__rl": true,
+          "mode": "list",
+          "value": "public"
+        },
+        "table": {
+          "__rl": true,
+          "value": "evenements",
+          "mode": "list",
+          "cachedResultName": "evenements"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "id_capteur": "={{ $json.id_capteur }}",
+            "valeur_mesure": "={{ $json.valeur_mesure }}",
+            "timestamp": "={{ $json.timestamp }}"
+          },
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "id_evenement",
+              "displayName": "id_evenement",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "number",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "id_capteur",
+              "displayName": "id_capteur",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "number",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "valeur_mesure",
+              "displayName": "valeur_mesure",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "number",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "timestamp",
+              "displayName": "timestamp",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "dateTime",
+              "canBeUsedToMatch": true
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        320,
+        -64
+      ],
+      "id": "4ee98a2b-fb54-409c-b117-422178f63274",
+      "name": "Insert rows in a table",
+      "credentials": {
+        "postgres": {
+          "id": "kaXkqdTOanFeNhFZ",
+          "name": "Postgres account"
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "operation": "insert",
+        "collection": "Evenements",
+        "fields": "id_capteur,valeur_mesure,timestamp,is_valid",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.mongoDb",
+      "typeVersion": 1.3,
+      "position": [
+        672,
+        -64
+      ],
+      "id": "0fc2cc46-cc11-43ca-bfbb-dca965393630",
+      "name": "Insert documents",
+      "credentials": {
+        "mongoDb": {
+          "id": "oQt47alYXnHOJR1N",
+          "name": "MongoDB account"
+        }
+      },
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "e578b3f3-203b-484c-9f01-3496e14bb74d",
+              "leftValue": "={{ $json.error !== undefined }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        480,
+        -208
+      ],
+      "id": "c33c94da-3da9-4905-9be4-2dd956f659f4",
+      "name": "If"
+    },
+    {
+      "parameters": {
+        "fromEmail": "alertes@iot-fleet.local",
+        "toEmail": "admin@iot-fleet.local",
+        "subject": "[ALERTE] Echec d'ingestion - IOT Fleet",
+        "emailFormat": "text",
+        "text": "=Une erreur est survenue lors de l'ecriture d'un evenement capteur en base.\n\nMessage d'erreur :\n{{ $json.error.message }}\n\nDonnee concernee :\n{{ JSON.stringify($json) }}\n\nDetecte le {{ $now }}.",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2.1,
+      "position": [
+        640,
+        -400
+      ],
+      "id": "4e1eb755-133f-4536-8927-d4d570970393",
+      "name": "Send an Email",
+      "webhookId": "481bb3a8-431b-49dc-a4e9-4e900c809dee",
+      "credentials": {
+        "smtp": {
+          "id": "Eh92LVGmITSfwVUo",
+          "name": "SMTP account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "fromEmail": "alertes@iot-fleet.local",
+        "toEmail": "admin@iot-fleet.local",
+        "subject": "[ALERTE] Echec d'ingestion MongoDB - IOT Fleet",
+        "emailFormat": "text",
+        "text": "=Une erreur est survenue lors de l'ecriture d'un evenement capteur en base.\n\nMessage d'erreur :\n{{ $json.error.message }}\n\nDonnee concernee :\n{{ JSON.stringify($json) }}\n\nDetecte le {{ $now }}.",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2.1,
+      "position": [
+        912,
+        64
+      ],
+      "id": "0ec7a70d-0e44-481b-a10e-3bda65e6ac9f",
+      "name": "Send an Email1",
+      "webhookId": "481bb3a8-431b-49dc-a4e9-4e900c809dee",
+      "credentials": {
+        "smtp": {
+          "id": "Eh92LVGmITSfwVUo",
+          "name": "SMTP account"
+        }
+      }
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "Code in JavaScript",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code in JavaScript": {
+      "main": [
+        [
+          {
+            "node": "Insert rows in a table",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Insert rows in a table": {
+      "main": [
+        [
+          {
+            "node": "If",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Insert documents": {
+      "main": [
+        [],
+        [
+          {
+            "node": "Send an Email1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "If": {
+      "main": [
+        [
+          {
+            "node": "Send an Email",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Insert documents",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate",
+    "availableInMCP": false
+  },
+  "versionId": "ec76c9c7-8a71-4505-8912-b3299bc371cf",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "490f77ecfdb4ace74320b5509c4d71a3783c28187fecfec26c8a865cb06a25a2"
+  },
+  "nodeGroups": [],
+  "id": "Cy8N4yoXtyKIuwDN",
+  "tags": []
+}

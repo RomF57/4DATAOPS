@@ -1,0 +1,13 @@
+# Secrets - NE JAMAIS committer
+.env
+
+# Logs du generateur
+*.log
+
+# Environnement virtuel Python
+venv/
+__pycache__/
+*.pyc
+
+# Donnees diverses
+data/
