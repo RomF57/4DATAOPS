@@ -82,7 +82,6 @@ Contrairement à PostgreSQL — dont les tables sont créées automatiquement pa
    > L'hôte est ici `localhost` car Compass s'exécute sur la machine hôte (le port `27017` est exposé par Docker). À ne pas confondre avec le credential MongoDB **dans n8n**, qui utilise `mongodb://mongodb:27017` (le nom de service Docker, car n8n tourne dans un conteneur).
 3. Cliquer sur **Create Database** :
    - **Database Name** : `iot_fleet`
-   - **Collection Name** : `Evenements`
 4. Valider avec **Create Database**.
 
 Les documents écrits par le pipeline ont la forme suivante (le champ `_id`, généré automatiquement par MongoDB, sert d'identifiant unique d'événement) :
@@ -138,6 +137,20 @@ Le script envoie une mesure aléatoire toutes les 2 secondes vers l'URL de produ
 
 ---
 
+## Tester la résilience et les alertes
+
+Pour prouver que le pipeline gère une erreur sans se bloquer et envoie bien l'alerte SMTP, injecter une **donnée invalide** (`id_capteur` non entier, rejeté par PostgreSQL) :
+
+```powershell
+Invoke-RestMethod -Uri "http://localhost:5678/webhook/sensor-data" -Method Post -ContentType "application/json" -Body '{"id_capteur":"INVALID","valeur_mesure":999999,"timestamp":"2026-06-17T10:00:00Z"}'
+```
+
+L'erreur est capturée par la branche `Continue on Fail` du nœud Postgres : une alerte apparaît dans Mailpit (http://localhost:8025) et le flux principal continue de traiter les mesures valides.
+
+> Arrêter le générateur de données avant ces tests pour ne pas inonder la boîte d'alertes.
+
+---
+
 ## Maintenance — `reset.sh`
 
 `reset.sh` (ou `reset.bat` sous Windows) exécute `docker compose down -v` puis `docker compose up -d` : une **remise à zéro totale** de l'environnement, garantissant que chaque session démarre sur une base saine.
@@ -152,20 +165,6 @@ Le script envoie une mesure aléatoire toutes les 2 secondes vers l'URL de produ
 ./reset.sh        # Linux / macOS
 reset.bat         # Windows
 ```
-
----
-
-## Tester la résilience et les alertes
-
-Pour prouver que le pipeline gère une erreur sans se bloquer et envoie bien l'alerte SMTP, injecter une **donnée invalide** (`id_capteur` non entier, rejeté par PostgreSQL) :
-
-```powershell
-Invoke-RestMethod -Uri "http://localhost:5678/webhook/sensor-data" -Method Post -ContentType "application/json" -Body '{"id_capteur":"INVALID","valeur_mesure":999999,"timestamp":"2026-06-17T10:00:00Z"}'
-```
-
-L'erreur est capturée par la branche `Continue on Fail` du nœud Postgres : une alerte apparaît dans Mailpit (http://localhost:8025) et le flux principal continue de traiter les mesures valides.
-
-> Arrêter le générateur de données avant ces tests pour ne pas inonder la boîte d'alertes.
 
 ---
 
