@@ -151,7 +151,7 @@ L'erreur est capturée par la branche `Continue on Fail` du nœud Postgres : une
 
 ---
 
-## Maintenance — `reset.sh`
+## Maintenance — `reset.sh / reset.bat`
 
 `reset.sh` (ou `reset.bat` sous Windows) exécute `docker compose down -v` puis `docker compose up -d` : une **remise à zéro totale** de l'environnement, garantissant que chaque session démarre sur une base saine.
 
